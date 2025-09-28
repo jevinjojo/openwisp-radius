@@ -244,12 +244,21 @@ Example:
 
     POST /api/v1/freeradius/authorize/ HTTP/1.1 username=testuser&password=testpassword
 
-======== ===========================
-Param    Description
-======== ===========================
-username Username for the given user
-password Password for the given user
-======== ===========================
+==================== ===============================================
+Param                Description
+==================== ===============================================
+username             Username for the given user
+password             Password for the given user
+called_station_id    Called Station ID (optional, passthrough)
+calling_station_id   Calling Station ID (optional, affects Simultaneous-Use)
+==================== ===============================================
+
+.. note::
+
+   The authorize API is backward compatible. If ``calling_station_id`` is not
+   provided, behavior remains unchanged. When provided, duplicate logins from
+   the same ``calling_station_id`` are rejected and Simultaneous-Use counting
+   excludes the current ``calling_station_id``.
 
 If the authorization is successful, the API will return all group replies
 related to the group with highest priority assigned to the user.

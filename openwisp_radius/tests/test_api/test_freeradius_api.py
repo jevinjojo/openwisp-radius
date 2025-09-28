@@ -1561,6 +1561,70 @@ class TestTransactionFreeradiusApi(
                 {"op": "=", "value": "240"},
             )
 
+        with self.subTest("Duplicate login from same device is rejected"):
+            # keep limit > 0 to enable Simultaneous-Use logic without tripping the limit
+            RadiusGroupCheck.objects.filter(id=simultaneous_use_check.id).update(
+                value="2"
+            )
+            # create an open session from a specific device
+            device_mac = "00:11:22:33:44:55"
+            self._create_radius_accounting(
+                **{
+                    **self.acct_post_data,
+                    "username": user.username,
+                    "unique_id": "test_session_same_device",
+                    "stop_time": None,
+                    "calling_station_id": device_mac,
+                }
+            )
+            # attempt authorization from same device should be rejected
+            response = self._authorize_user(
+                auth_header=self.auth_header, calling_station_id=device_mac
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.data["control:Auth-Type"], "Reject")
+            self.assertIn("already logged in from this device", response.data["Reply-Message"])  # noqa: E501
+
+        with self.subTest("Exclude current device from Simultaneous-Use count"):
+            # Set limit to 1 and create one open session from a different device
+            RadiusGroupCheck.objects.filter(id=simultaneous_use_check.id).update(
+                value="1"
+            )
+            other_device = "aa:bb:cc:dd:ee:ff"
+            self._create_radius_accounting(
+                **{
+                    **self.acct_post_data,
+                    "username": user.username,
+                    "unique_id": "test_session_other_device",
+                    "stop_time": None,
+                    "calling_station_id": other_device,
+                }
+            )
+            # Authorize from a new device: should be rejected because limit is 1
+            new_device = "11:22:33:44:55:66"
+            response = self._authorize_user(
+                auth_header=self.auth_header, calling_station_id=new_device
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.data["control:Auth-Type"], "Reject")
+            # Now authorize from the same 'other_device': should be rejected by duplicate-device rule
+            response = self._authorize_user(
+                auth_header=self.auth_header, calling_station_id=other_device
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.data["control:Auth-Type"], "Reject")
+            # Close other_device session and authorize from new_device: should accept
+            RadiusAccounting.objects.filter(
+                username=user.username,
+                calling_station_id=other_device,
+                stop_time=None,
+            ).update(stop_time="2025-08-12T23:00:24.020460+01:00")
+            response = self._authorize_user(
+                auth_header=self.auth_header, calling_station_id=new_device
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["control:Auth-Type"], "Accept")
+
         with self.subTest("Closed sessions are ignored"):
             # Keep limit at 1 and Close all previously open sessions
             RadiusAccounting.objects.filter(stop_time=None).update(
