@@ -325,6 +325,7 @@ class AuthorizeView(GenericAPIView, IDVerificationHelper):
                 group_checks,
                 organization_id,
                 calling_station_id=calling_station_id,
+                called_station_id=called_station_id,
             )
             if simultaneous_use is not None:
                 return simultaneous_use
@@ -339,7 +340,13 @@ class AuthorizeView(GenericAPIView, IDVerificationHelper):
         return data, self.accept_status
 
     def _check_simultaneous_use(
-        self, data, user, group_checks, organization_id, calling_station_id=None
+        self,
+        data,
+        user,
+        group_checks,
+        organization_id,
+        calling_station_id=None,
+        called_station_id=None,
     ):
         """
         Check if user has exceeded simultaneous use limit
@@ -357,21 +364,13 @@ class AuthorizeView(GenericAPIView, IDVerificationHelper):
             organization_id=organization_id,
             stop_time__isnull=True,
         )
-        # If calling_station_id is provided, exclude the current device's open session
-        # from the count, but also explicitly reject if an open session for the same
-        # device exists to prevent duplicate logins from the same client.
+        # In some corner cases, RADIUS accounting sessions can remain open even
+        # though the user is not authenticated on the NAS anymore; allow
+        # re-authentication of the same client on the same NAS.
         if calling_station_id:
-            same_device_open_sessions = queryset.filter(
-                calling_station_id=calling_station_id
-            )
-            if same_device_open_sessions.exists():
-                data.update(self.reject_attributes.copy())
-                if "Reply-Message" not in data:
-                    data["Reply-Message"] = (
-                        "You are already logged in from this device - access denied"
-                    )
-                return data, self.reject_status
-            open_sessions = queryset.exclude(calling_station_id=calling_station_id).count()
+            open_sessions = queryset.exclude(
+                calling_station_id=calling_station_id, called_station_id=called_station_id
+            ).count()
         else:
             open_sessions = queryset.count()
         if open_sessions >= max_simultaneous:

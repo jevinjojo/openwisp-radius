@@ -1561,13 +1561,14 @@ class TestTransactionFreeradiusApi(
                 {"op": "=", "value": "240"},
             )
 
-        with self.subTest("Duplicate login from same device is rejected"):
+        with self.subTest("Same device reauth on same NAS is allowed"):
             # keep limit > 0 to enable Simultaneous-Use logic without tripping the limit
             RadiusGroupCheck.objects.filter(id=simultaneous_use_check.id).update(
                 value="2"
             )
-            # create an open session from a specific device
+            # create an open session from a specific device and NAS
             device_mac = "00:11:22:33:44:55"
+            called_id = "AA-BB-CC-DD-EE-FF:nas-host"
             self._create_radius_accounting(
                 **{
                     **self.acct_post_data,
@@ -1575,15 +1576,17 @@ class TestTransactionFreeradiusApi(
                     "unique_id": "test_session_same_device",
                     "stop_time": None,
                     "calling_station_id": device_mac,
+                    "called_station_id": called_id,
                 }
             )
-            # attempt authorization from same device should be rejected
+            # attempt authorization from same device and same NAS should be allowed
             response = self._authorize_user(
-                auth_header=self.auth_header, calling_station_id=device_mac
+                auth_header=self.auth_header,
+                calling_station_id=device_mac,
+                called_station_id=called_id,
             )
-            self.assertEqual(response.status_code, 401)
-            self.assertEqual(response.data["control:Auth-Type"], "Reject")
-            self.assertIn("already logged in from this device", response.data["Reply-Message"])  # noqa: E501
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["control:Auth-Type"], "Accept")
 
         with self.subTest("Exclude current device from Simultaneous-Use count"):
             # Set limit to 1 and create one open session from a different device
@@ -1607,12 +1610,14 @@ class TestTransactionFreeradiusApi(
             )
             self.assertEqual(response.status_code, 401)
             self.assertEqual(response.data["control:Auth-Type"], "Reject")
-            # Now authorize from the same 'other_device': should be rejected by duplicate-device rule
+            # Now authorize from the same 'other_device' and same NAS: should be allowed per mentor rule
             response = self._authorize_user(
-                auth_header=self.auth_header, calling_station_id=other_device
+                auth_header=self.auth_header,
+                calling_station_id=other_device,
+                called_station_id=self.acct_post_data["called_station_id"],
             )
-            self.assertEqual(response.status_code, 401)
-            self.assertEqual(response.data["control:Auth-Type"], "Reject")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["control:Auth-Type"], "Accept")
             # Close other_device session and authorize from new_device: should accept
             RadiusAccounting.objects.filter(
                 username=user.username,
