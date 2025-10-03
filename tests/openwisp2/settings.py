@@ -293,6 +293,13 @@ REST_AUTH = {
 
 ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = "email_confirmation_success"
 ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = "email_confirmation_success"
+# Align with allauth deprecations: configure required signup fields explicitly
+ACCOUNT_SIGNUP_FIELDS = {
+    "username": {"required": True},
+    "email": {"required": True},
+    "password1": {"required": True},
+    "password2": {"required": True},
+}
 
 # OPENWISP_RADIUS_PASSWORD_RESET_URLS = {
 #     # use the uuid because the slug can change
