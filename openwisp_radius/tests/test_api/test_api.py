@@ -486,7 +486,13 @@ class TestApi(AcctMixin, ApiTokenMixin, BaseTestCase):
             self.assertEqual(User.objects.count(), 2)
 
     @override_settings(
-        ACCOUNT_EMAIL_VERIFICATION="mandatory", ACCOUNT_EMAIL_REQUIRED=True
+        ACCOUNT_EMAIL_VERIFICATION="mandatory",
+        ACCOUNT_SIGNUP_FIELDS={
+            "username": {"required": True},
+            "email": {"required": True},
+            "password1": {"required": True},
+            "password2": {"required": True},
+        },
     )
     def test_email_verification_sent(self):
         self.assertEqual(User.objects.count(), 0)
